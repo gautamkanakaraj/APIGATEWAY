@@ -1,0 +1,53 @@
+# Binaries and Executables
+# ------------------------
+# Compiled test binaries
+*.test
+*.out
+*.prof
+
+# Compiled executables
+gateway
+generatetoken
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Ignore local bin/build directories
+.bin/
+bin/
+build/
+dist/
+
+# IDEs and Editors
+# ----------------
+# JetBrains (GoLand, IntelliJ, etc.)
+.idea/
+*.iml
+*.iws
+
+# Visual Studio Code
+.vscode/
+.history/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Other editors
+*~
+\#*\#
+.DS_Store
+Thumbs.db
+
+# Environment and Secrets
+# -----------------------
+.env
+.env.*
+!.env.example
+secrets.yaml
+
+# Logs
+# ----
+*.log
