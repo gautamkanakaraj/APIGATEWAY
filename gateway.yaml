@@ -1,0 +1,17 @@
+server:
+  port: "8080"
+
+# Centralized Tier Definitions
+tiers:
+  premium:
+    capacity: 20
+    fill_rate: 5
+  free:
+    capacity: 5
+    fill_rate: 1
+
+routes:
+  - path: "/api/v1/products"
+    target: "http://localhost:8081"
+  - path: "/api/v1/checkout"
+    target: "http://localhost:8082"
