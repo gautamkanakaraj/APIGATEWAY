@@ -29,8 +29,8 @@ func main() {
 	freeToken := jwt.NewWithClaims(jwt.SigningMethodHS256, freeClaims)
 	freeStr, _ := freeToken.SignedString(mySigningKey)
 
-	fmt.Println("🎟️ PREMIUM TOKEN:")
+	fmt.Println(" PREMIUM TOKEN:")
 	fmt.Printf("Authorization: Bearer %s\n\n", premiumStr)
-	fmt.Println("🎟️ FREE TOKEN:")
+	fmt.Println(" FREE TOKEN:")
 	fmt.Printf("Authorization: Bearer %s\n", freeStr)
 }

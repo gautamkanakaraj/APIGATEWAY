@@ -4,7 +4,7 @@ server:
 # Centralized Tier Definitions
 tiers:
   premium:
-    capacity: 20
+    capacity: 50
     fill_rate: 5
   free:
     capacity: 5
@@ -12,6 +12,9 @@ tiers:
 
 routes:
   - path: "/api/v1/products"
-    target: "http://localhost:8081"
+    targets:
+      - "http://service-products-1:8081"
+      - "http://service-products-2:8083"
   - path: "/api/v1/checkout"
-    target: "http://localhost:8082"
+    targets:
+      - "http://service-checkout-1:8082"

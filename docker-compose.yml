@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    environment:
+      - GATEWAY_MODE=gateway
+      - REDIS_ADDR=redis:6379
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/root/config
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - gateway-network
+
+  redis:
+    image: redis:alpine
+    container_name: gateway-cache
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 5
+    networks:
+      - gateway-network
+
+  service-products-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mock-products-1
+    environment:
+      - GATEWAY_MODE=mock
+      - PORT=8081
+      - SERVICE_NAME=products-service-instance-1
+    ports:
+      - "8081:8081"
+    networks:
+      - gateway-network
+
+  service-products-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mock-products-2
+    environment:
+      - GATEWAY_MODE=mock
+      - PORT=8083
+      - SERVICE_NAME=products-service-instance-2
+    ports:
+      - "8083:8083"
+    networks:
+      - gateway-network
+
+  service-checkout-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mock-checkout-1
+    environment:
+      - GATEWAY_MODE=mock
+      - PORT=8082
+      - SERVICE_NAME=checkout-service-instance-1
+    ports:
+      - "8082:8082"
+    networks:
+      - gateway-network
+
+networks:
+  gateway-network:
+    name: gateway-network
+    driver: bridge
