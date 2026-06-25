@@ -163,9 +163,21 @@ If you prefer to run or verify components manually:
    ```
 
 5. **Stop and Clean Up**:
-   ```bash
-   ./.bin/docker-compose down
-   ```
+   * **Stop the Traffic Simulator (Freezes dashboard updates):**
+     If you ran the traffic generator loop (e.g., via `./start.sh`), you can stop the simulated traffic (preventing new request logs on the dashboard) with:
+     ```bash
+     pkill -f start.sh
+     ```
+   * **Stop only the Backend Services (Leaves only the dashboard running without updates):**
+     To stop the API Gateway, Redis, and mock backend microservices while leaving the dashboard UI running:
+     ```bash
+     ./.bin/docker-compose stop api-gateway mock-checkout-1 mock-products-1 mock-products-2 gateway-cache
+     ```
+   * **Complete Shutdown (Stops everything, including the dashboard):**
+     To completely shut down and remove all Docker containers:
+     ```bash
+     ./.bin/docker-compose down
+     ```
 
 ---
 

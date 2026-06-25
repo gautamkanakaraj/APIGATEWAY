@@ -2,81 +2,117 @@
                     API GATEWAY INTERNAL ARCHITECTURE
 ================================================================================
 
-                               [ Client Request ]
-                                       │
-                                       │ (Port 8080)
-                                       ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                        0. OBSERVABILITY MIDDLEWARE                           │
-│  - Extracts / Generates X-Trace-ID header                                    │
-│  - Starts OpenTelemetry Span                                                 │
-│  - Records Request Duration / Count metrics in Prometheus                    │
-└──────────────────────────────────────┬───────────────────────────────────────┘
-                                       │
-                                       ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                        1. API GATEWAY ROUTER (RWMutex)                       │
-│  - Resolves target route prefix from hot-reloaded configuration              │
-│  - Exempts telemetry path '/metrics' from JWT edge auth                      │
-└──────────────────────────────────────┬───────────────────────────────────────┘
-                                       │
-                                       ├─────────────────────────┐
-                                       │ [Route Unmapped]        │ [Route Matched]
-                                       ▼                         ▼
-                             [ 404 Not Found ]         ┌───────────────────┐
-                                                       │ 2. JWT VALIDATOR  │
-                                                       │ (Verify HS256 JWT │
-                                                       │  Bearer Token)    │
-                                                       └─────────┬─────────┘
-                                                                 │
-                                                   ┌─────────────┴─────────────┐
-                                                   │ [Invalid / Expired]       │ [Valid JWT Claims]
-                                                   ▼                           ▼
-                                         [ 401 Unauthorized ]       ┌─────────────────────┐
-                                                                    │ 3. TIER RESOLVER    │
-                                                                    │ (Lookup capacities  │
-                                                                    │  from live config)  │
-                                                                    └──────────┬──────────┘
-                                                                               │
-                                                                               ▼
-                                                                    ┌─────────────────────┐
-                                                                    │ 4. RATE LIMITER     │
-                                                                    │ (Atomic Lua script  │
-                                                                    │  on Redis Bucket)   │
-                                                                    └──────────┬──────────┘
-                                                                               │
-                                                   ┌───────────────────────────┴───────────────────────────┐
-                                                   │ [Bucket Depleted (429)]                               │ [Tokens Available]
-                                                   ▼                                                       ▼
-                                       ┌───────────────────────┐                               ┌───────────────────────┐
-                                       │   5a. Block Request   │                               │ 5b. Dynamic Balancer  │
-                                       │ - Inject rate limits  │                               │   (NextPeer Selection)│
-                                       │ - Return HTTP 429     │                               └───────────┬───────────┘
-                                       └───────────────────────┘                                           │
-                                                                                                           ▼
-                                                                                               ┌───────────────────────┐
-                                                                                               │  6. CIRCUIT BREAKER   │
-                                                                                               │  - Check CB state     │
-                                                                                               │  - ServeHTTP inside   │
-                                                                                               │    gobreaker.Execute  │
-                                                                                               └───────────┬───────────┘
-                                                                                                           │
-                                                                               ┌───────────────────────────┴───────────────────────────┐
-                                                                               │ [CB State Open (503)]                                 │ [CB Closed / Half-Open]
-                                                                               ▼                                                       ▼
-                                                                   ┌───────────────────────┐                               ┌───────────────────────┐
-                                                                   │ 7a. Service Degraded  │                               │ 7b. Upstream Handoff  │
-                                                                   │ - Try next peer (or)  │                               │ - Proxy request       │
-                                                                   │ - Return HTTP 503     │                               │ - Record 5xx errors   │
-                                                                   └───────────────────────┘                               └───────────────────────┘
+                                 [ Client Request ]
+                                         │
+                                         │ (Port 8080)
+                                         ▼
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │                        0. OBSERVABILITY MIDDLEWARE                           │
+ │  - Tracing: Generates/propagates X-Trace-ID header downstream & upstream      │
+ │  - OpenTelemetry: Starts transaction Span context                            │
+ │  - Prometheus: gateway_requests_total & gateway_request_duration_seconds     │
+ └──────────────────────────────────────┬───────────────────────────────────────┘
+                                         │
+                                         ▼
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │                        1. API GATEWAY ROUTER (RWMutex)                       │
+ │  - Matches prefix paths against dynamically reloaded config routes          │
+ │  - Exposes health routes and bypasses '/metrics' from authorization          │
+ └──────────────────────────────────────┬───────────────────────────────────────┘
+                                         │
+                                         ├─────────────────────────┐
+                                         │ [Route Unmapped]        │ [Route Matched]
+                                         ▼                         ▼
+                               [ 404 Not Found ]         ┌───────────────────┐
+                                                         │ 2. JWT VALIDATOR  │
+                                                         │ - Parses Bearer   │
+                                                         │   Token (HS256)   │
+                                                         │ - Extracts sub &  │
+                                                         │   tier claims     │
+                                                         └─────────┬─────────┘
+                                                                   │
+                                                     ┌─────────────┴─────────────┐
+                                                     │ [Invalid / Expired]       │ [Valid JWT Claims]
+                                                     ▼                           ▼
+                                           [ 401 Unauthorized ]       ┌─────────────────────┐
+                                                                      │ 3. TIER RESOLVER    │
+                                                                      │ - Loads tier rule   │
+                                                                      │   (capacity & rate) │
+                                                                      └──────────┬──────────┘
+                                                                                 │
+                                                                                 ▼
+                                                                      ┌─────────────────────┐
+                                                                      │ 4. RATE LIMITER     │
+                                                                      │ - Eval Lua script   │
+                                                                      │   on Redis (HMSET)  │
+                                                                      │ - Key: ratelimit:   │
+                                                                      │   <sub:matchedPath> │
+                                                                      └──────────┬──────────┘
+                                                                                 │
+                                                     ┌───────────────────────────┴───────────────────────────┐
+                                                     │ [Bucket Depleted (429)]                               │ [Tokens Available]
+                                                     ▼                                                       ▼
+                                         ┌───────────────────────┐                               ┌───────────────────────┐
+                                         │   5a. Block Request   │                               │ 5b. Dynamic Balancer  │
+                                         │ - Set headers (Limit, │                               │ - NextPeer selection  │
+                                         │   Remaining)          │                               │ - Lock-Free Atomic    │
+                                         │ - Return HTTP 429     │                               │   Round-Robin         │
+                                         └───────────────────────┘                               └───────────┬───────────┘
+                                                                                                             │
+                                                                                                             ▼
+                                                                                                 ┌───────────────────────┐
+                                                                                                 │  6. CIRCUIT BREAKER   │
+                                                                                                 │ - Check CB State:     │
+                                                                                                 │   Closed/Half-Open/   │
+                                                                                                 │   Open                │
+                                                                                                 │ - Execute ServeHTTP   │
+                                                                                                 └───────────┬───────────┘
+                                                                                                             │
+                                                                                 ┌───────────────────────────┴───────────────────────────┐
+                                                                                 │ [Breaker Open (503)]                                  │ [Breaker Closed/Half-Open]
+                                                                                 ▼                                                       ▼
+                                                                     ┌───────────────────────┐                               ┌───────────────────────┐
+                                                                     │ 7a. Fail Fast (503)   │                               │ 7b. Proxy Handshake   │
+                                                                     │ - Returns 503 service │                               │ - Reverse proxy passes│
+                                                                     │   unavailable         │                               │   headers and payload │
+                                                                     └───────────────────────┘                               │ - Captures status &   │
+                                                                                                                             │   network error codes │
+                                                                                                                             └───────────────────────┘
 
 ================================================================================
                     DYNAMIC OPERATIONS & BACKGROUND DAEMONS
 ================================================================================
 
-┌──────────────────────────────────────┐                   ┌──────────────────────────────────────┐
-│      FSNOTIFY CONFIG WATCHER         │                   │      HEALTH CHECK DAEMON (5s)        │
-│  - Watches '.' directory             │                   │  - Periodically pings /health        │
-│  - Debounces config write events     │                   │  - Toggles Backend.Alive status      │
-│  - Reloads gateway.yaml dynamically  │                   │  - Recovers offline nodes safely     │
-└──────────────────────────────────────┘                   └──────────────────────────────────────┘
+  ┌──────────────────────────────────────┐             ┌──────────────────────────────────────┐
+  │      FSNOTIFY CONFIG WATCHER         │             │      HEALTH CHECK DAEMON (5s)        │
+  │  - Directory file listener           │             │  - Periodically pings /health        │
+  │  - Debounces config write events     │             │  - Toggles Backend.Alive status      │
+  │  - Hot-reloads gateway.yaml          │             │  - Skips offline peers in balancer   │
+  └──────────────────────────────────────┘             └──────────────────────────────────────┘
+
+================================================================================
+                     REAL-TIME OBSERVABILITY DASHBOARD PIPELINE
+================================================================================
+
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │                         8. GATEWAY CONTAINER LOGS                            │
+ │  - Prints events: [PROXY PASS] | [BLOCKED] | [CIRCUIT BREAKER] | [ALERT]     │
+ └──────────────────────────────────────┬───────────────────────────────────────┘
+                                         │
+                                         │ (Streams via Docker socket: /var/run/docker.sock)
+                                         ▼
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │                         9. TELEMETRY DASHBOARD BACKEND                       │
+ │  - Connects to docker.sock stream endpoint `/containers/api-gateway/logs`    │
+ │  - Parses log text line-by-line via Regular Expressions                      │
+ │  - Health checks all targets every 3 seconds to verify container status      │
+ └──────────────────────────────────────┬───────────────────────────────────────┘
+                                         │
+                                         │ (Pushes Server-Sent Events /stream)
+                                         ▼
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │                        10. FRONTEND CONTROL BOARD UI                         │
+ │  - Establishes persistent EventSource linkage with `/stream` endpoint        │
+ │  - Animates floating request particles along SVG topology connector lines    │
+ │  - Renders live token progress bars and replica traffic balance meters       │
+ └──────────────────────────────────────────────────────────────────────────────┘
