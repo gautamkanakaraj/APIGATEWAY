@@ -27,7 +27,9 @@ if tokens == nil then
 else
     local elapsed = now - last_updated
     if elapsed > 0 then
-        tokens = math.min(capacity, tokens + (elapsed * fill_rate))
+        -- fill_rate is tokens per second; elapsed is in milliseconds.
+        -- Refill is: elapsed * (fill_rate / 1000)
+        tokens = math.min(capacity, tokens + (elapsed * fill_rate / 1000))
         last_updated = now
     end
 end
@@ -56,7 +58,7 @@ func NewRateLimiter(redisAddr string) *RateLimiter {
 }
 
 func (rl *RateLimiter) Evaluate(ctx context.Context, key string, capacity int, fillRate int) (bool, int, error) {
-	now := time.Now().Unix()
+	now := time.Now().UnixMilli()
 
 	res, err := rl.Client.Eval(ctx, TokenBucketLuaScript, []string{key}, capacity, fillRate, now).Result()
 	if err != nil {

@@ -51,3 +51,7 @@ secrets.yaml
 # Logs
 # ----
 *.log
+
+# Precompiled Root Binaries
+gateway-bin
+gen-token

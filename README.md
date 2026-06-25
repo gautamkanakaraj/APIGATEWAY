@@ -54,19 +54,23 @@ Downstream service outages can cascade and consume gateway connection pools. We 
 
 ```text
 ├── balancer.go             # Round-Robin Load Balancer, health daemon, and Circuit Breaker
-├── docker-compose.yml      # Multicontainer setup orchestrating Gateway, Redis, and mock nodes
-├── Dockerfile              # Multi-stage optimized Go build
+├── docker-compose.yml      # Multicontainer setup orchestrating Gateway, Redis, mock nodes, and Dashboard
+├── Dockerfile              # Multi-stage optimized Go build for gateway and mocks
 ├── gateway.yaml            # Config mapping ports, load-balancing targets, and rate limits
 ├── generatetoken.go        # Utility creating signed Premium and Free testing tokens
 ├── go.mod                  # Package management and dependencies
 ├── go.sum                  # Package integrity lock file
 ├── limiter/
-│   └── limiter.go          # Token Bucket evaluator utilizing the atomic Redis Lua Engine
+│   └── limiter.go          # Millisecond-precision token bucket evaluator utilizing Redis & Lua
+├── dashboard/
+│   ├── index.html          # Observability control board frontend (glassmorphic dark UI)
+│   ├── main.go             # Dashboard backend streaming Docker logs & checking mock server health
+│   └── Dockerfile          # Multi-stage container definition for the dashboard
 ├── main.go                 # Gateway bootstrap, fsnotify reload, and observability middleware
 ├── README.md               # Up-to-date documentation and quickstart guide
-├── architecture.txt        # ASCII architectural diagram
-├── test.sh                 # Testing utility executing curl loops for the Premium tier
-└── test_premium.sh         # Helper verifying rapid concurrent request rejection thresholds
+├── start.sh                # Environment orchestrator & background traffic simulator script
+├── document.txt            # Unified gateway architecture and request lifecycles brief
+└── architecture.txt        # ASCII architectural flow chart
 ```
 
 ---

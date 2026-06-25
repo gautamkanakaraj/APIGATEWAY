@@ -1,83 +1,73 @@
-# Architecture Brief: Multi-Tenant Serverless Function Platform ("Mini AWS Lambda")
+# Architecture Brief: Telemetry-Enabled API Gateway
 
-## Overview
-The primary objective of this project is to build a Serverless Function Platform that eliminates the "Complexity Tax" of traditional serverless infrastructure. It provides developers with a frictionless "Code-to-URL" deployment workflow, transforming a cloud deployment into an instant API creation tool.
-
----
-
-## Core Architectural Pillars
-
-### 1. The Control Plane (Go)
-- **Status**: Implemented & Running locally.
-- **Details**: Written in Go using the standard `net/http` library. Acts as the API gateway and dynamic router.
-- **Endpoints**:
-  - `POST /api/deploy`: Ingests code snippets and saves them to the DB.
-  - `GET /user/code/:id`: Fetches code from the DB and runs it in the sandbox.
-  - `GET /api/ws`: Upgrades to WebSocket to stream real-time logs to the frontend.
-
-### 2. State Management (Neon Postgres)
-- **Status**: Configured.
-- **Details**: Decouples compute and storage. The database connection is handled via `pgx` / `pq` and configured using `.env` variables (`NEON_DB_URL`).
-- **Schema**:
-  - `functions` table: Stores function UUID, user ID, code content, public URL, and creation timestamp.
-
-### 3. The Execution Sandbox (Lightweight Isolation)
-- **Status**: Partially Implemented.
-- **Details**:
-  - **JavaScript Engine**: Pure-Go `goja` runner with 2-second timeout, memory isolation, and a custom `console.log` interceptor that streams logs in real-time.
-  - **WebAssembly Engine**: Draft implementation of Python execution inside `wasmtime-go` using `python-3.11.wasm`.
-
-### 4. The Frontend Interface
-- **Status**: Draft Implementation.
-- **Details**: A single-page application (`frontend/src/index.html`) using vanilla HTML, CSS, and JS. It features a basic code editor textarea, a deploy button, and a console log terminal that connects to the Go control plane via WebSockets.
+This document provides a technical overview of the API Gateway, detailing its design, core pillars, and downstream routing mechanisms.
 
 ---
 
-## The "Code-to-URL" Lifecycle
+## 🏗️ Core Architectural Pillars
 
-1. **Deployment (Ingestion)**:
-   A user edits code in the editor and clicks "Deploy". The browser makes a `POST` request to `/api/deploy`. The Go Control Plane generates a UUID, saves the code into Neon Postgres, and returns a public URL (`/user/code/{uuid}`).
-   
-2. **Triggering (Routing)**:
-   When the public URL is visited, the request hits the Go Control Plane route `/user/code/:id`. The handler extracts the ID, queries Neon Postgres, and fetches the raw code content.
+### 1. Ingress & Routing Layer (Go)
+- **Role**: Serves as the entrance for all edge request traffic.
+- **Routing**: Matches path prefixes (e.g., `/api/v1/products`) to backend server pools using an lock-free round-robin algorithm.
+- **Reverse Proxy**: Utilizes Go's built-in `httputil.ReverseProxy` to stream client requests downstream, automatically preserving body payloads and response statuses.
 
-3. **Execution (Sandboxing)**:
-   The Control Plane executes the JavaScript code in a Goja VM context, capturing stdout via a callback function.
+### 2. Distributed Rate Limiter (Redis + Lua Script)
+- **Algorithm**: Token Bucket.
+- **Implementation**: Runs atomically inside Redis via a Lua script (`limiter/limiter.go`) to prevent race conditions during concurrent requests.
+- **Precision**: Millisecond-level resolution. Token replenishment is calculated at the millisecond scale (tokens filled per millisecond = `fill_rate / 1000`), ensuring smooth refilling for sub-second traffic profiles.
+- **Tiers**: Looked up dynamically from `gateway.yaml` based on the caller's JWT claims:
+  - `premium`: High burst capacity and fill rate.
+  - `free`: Low capacity and fill rate, short-circuiting requests with `429 Too Many Requests` once depleted.
 
-4. **Real-Time Feedback (Streaming)**:
-   While the function is executing in Goja, intercepted log lines are instantly broadcasted to active WebSocket clients (`/api/ws`) and rendered in the frontend console.
+### 3. Fault Tolerance & Circuit Breaking (`sony/gobreaker`)
+- **Isolation**: Each backend target maintains its own individual Circuit Breaker instance.
+- **Thresholds**: If a backend's error rate exceeds 50% over a window of 5 or more requests, the breaker trips to **Open** state.
+- **Failover**: The round-robin load balancer detects open breakers and bypasses degraded instances, routing traffic to healthy alternatives without impacting client success.
+- **Cooldown**: A 5-second cooldown period allows trial traffic under a **Half-Open** state to verify if the backend service has recovered.
+
+### 4. Zero-Downtime Hot-Reloading (`fsnotify`)
+- **Event Watcher**: A background goroutine watches the configuration directory using file system notifications.
+- **Thread Safety**: Updates to `gateway.yaml` instantly trigger a configuration parse. The gateway acquires a write lock, updates the route mappings and tier limits, cancels old health checking daemons, and starts new ones without needing a process restart.
+
+### 5. Real-Time Observability Control Board
+- **Backend Logging Stream**: Connects to the local Docker socket (`/var/run/docker.sock`) over HTTP. It reads the container log stream, automatically parses multiplexed data, and broadcasts structured events to frontend clients.
+- **Server-Sent Events (SSE)**: Streams proxy pass alerts, rate limiting blocks (429s), circuit breaker state changes, and service health states to clients in real-time.
+- **Frontend Dashboard**: Visualizes traffic topology, dynamic token bucket capacities, request distribution ratios, and service statuses inside a translucent, glassmorphic dark UI.
 
 ---
 
-## Current Project Status & Roadmap
+## 🔄 Request Lifecycle Diagram
 
-Below is the verified checklist of completed and pending tasks based on the codebase review:
-
-### Phase 1: Database & Schema
-- [x] **Database Integration**: Go database connection layer implemented in `control-plane/internal/db/db.go`.
-- [ ] **Schema Migration**: Write the schema definition (for the `functions` table) to `db/schema.sql`.
-- [ ] **Logging Schema**: Set up the `execution_logs` table for persistent invocation history.
-
-### Phase 2: Control Plane Development (Go)
-- [x] **Server Setup**: Go HTTP server configured on port `:8080`.
-- [x] **Ingestion API**: `POST /api/deploy` endpoint created and successfully inserts snippets into the DB.
-- [x] **WebSocket Server**: WebSocket logging gateway implemented in `ws.go` with connection registry and broadcasting.
-- [x] **Dynamic Router**: Ingress router implemented at `/user/code/:id` to fetch code and trigger execution.
-
-### Phase 3: Execution Sandbox Implementation (Go)
-- [x] **JavaScript Runtime**: `goja` integrated in `sandbox/engine/isolate.go` with 2-second execution safety limits.
-- [x] **Log Interception**: Custom `console.log` proxy created in Goja context to capture stdout and pipe it to the WebSocket broadcaster.
-- [x] **WebAssembly Engine**: WebAssembly Python interpreter setup drafted in `sandbox/engine/wasm.go`.
-- [ ] **Wasm Runtime Integration**: Hook the WebAssembly/Python sandbox into the Control Plane routing flow (currently only JS executes).
-- [ ] **Secure Sandbox Guardrails**: Enforce CPU/Memory limits and disable insecure JS APIs (e.g. restrict Goja from accessing host APIs).
-
-### Phase 4: Frontend Development
-- [x] **Vanilla MVP**: Built a functional HTML/CSS/JS frontend in `frontend/src/index.html`.
-- [x] **Real-time Log Connection**: Connected to the Control Plane WebSocket server to stream live logs.
-- [x] **Deployment Handler**: Connected deployment actions to `/api/deploy`.
-- [ ] **React Transition**: Re-scaffold the frontend inside `frontend/` as a proper Vite + React application, utilizing the existing `components/` and `services/` directory structure.
-- [ ] **Monaco Editor Integration**: Replace the simple `<textarea>` with `@monaco-editor/react` for syntax highlighting and autocomplete.
-
-### Phase 5: Production Readiness & CI/CD
-- [ ] **Containerization**: Create a `Dockerfile` for the Go control plane server.
-- [ ] **Deployment**: Configure Render deployment configurations for the Go server.
+```text
+[ Client Edge Request ]
+           │
+           ▼
+┌──────────────────────────────────────────────┐
+│  Observability Middleware (Metrics/Tracing)   │
+└──────────────────┬───────────────────────────┘
+                   │
+                   ▼
+┌──────────────────────────────────────────────┐
+│        JWT Verification & Tier Check         │
+└──────────────────┬───────────────────────────┘
+                   │
+                   ▼
+┌──────────────────────────────────────────────┐
+│  Redis Millisecond Token Bucket Evaluator    │  ◄── [ Redis Cache ]
+└──────────────────┬───────────────────────────┘
+                   │  (Within quota limit)
+                   ▼
+┌──────────────────────────────────────────────┐
+│     Round-Robin Load Balancer Selection      │
+└──────────────────┬───────────────────────────┘
+                   │  (Healthy node selected)
+                   ▼
+┌──────────────────────────────────────────────┐
+│  gobreaker Check (Closed/Half-Open state)     │
+└──────────────────┬───────────────────────────┘
+                   │
+                   ▼
+┌──────────────────────────────────────────────┐
+│     Reverse Proxy Forwarding Downstream      │  ──► [ Backend Node ]
+└──────────────────────────────────────────────┘
+```
