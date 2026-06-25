@@ -162,7 +162,17 @@ func (p *BackendPool) HealthCheckDaemon(ctx context.Context) {
 				// Ping the health endpoint of the backend
 				resp, err := client.Get(b.URL.String() + "/health")
 				
-				if err != nil || resp.StatusCode != http.StatusOK {
+				isHealthy := false
+				if err == nil {
+					if resp != nil {
+						if resp.StatusCode == http.StatusOK {
+							isHealthy = true
+						}
+						resp.Body.Close() // Prevent memory leaks
+					}
+				}
+
+				if !isHealthy {
 					if b.IsAlive() {
 						log.Printf("[ALERT] Node offline: %s", b.URL.String())
 						b.SetAlive(false) // Safely mark as dead
@@ -172,10 +182,6 @@ func (p *BackendPool) HealthCheckDaemon(ctx context.Context) {
 						log.Printf("[RECOVERY] Node back online: %s", b.URL.String())
 						b.SetAlive(true) // Safely mark as alive
 					}
-				}
-				
-				if resp != nil {
-					resp.Body.Close() // Prevent memory leaks
 				}
 			}
 		}

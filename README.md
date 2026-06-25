@@ -103,58 +103,65 @@ routes:
 
 ## 🚀 Getting Started
 
-### Quickstart (Docker Compose)
+### ⚡ Automated Orchestration & Simulation (Recommended)
 
-The easiest way to build and verify the entire network is using Docker Compose:
+You can spin up the entire multi-service topology, generate signed JWT authorization tokens, and launch a live traffic simulation with a single command:
 
-1. **Start the Infrastructure**:
+```bash
+chmod +x start.sh
+./start.sh
+```
+
+This script automates the following actions:
+1. **Docker Compose v2 Check**: Ensures a local standalone Go-based Compose v2 binary (`.bin/docker-compose`) is used to bypass outdated python docker-compose engine errors.
+2. **Topology Startup**: Cleans up conflicting containers and launches all services (`api-gateway`, `redis`, 3 backend mock servers, and the `gateway-dashboard`).
+3. **JWT Token Generation**: Executes `generatetoken.go` to sign mock JWTs for Free and Premium users.
+4. **Traffic Simulation**: Spins up a background simulator loop executing steady load requests, limit-breaking concurrent bursts (to show 429 rate-limiting blocks), and downstream instance crashes/recovery (to verify circuit breaker failover).
+5. **Observability Control Board**: Launches the dashboard backend and makes it accessible.
+
+👉 **Open the Observability Dashboard at**: [http://localhost:3001](http://localhost:3001)
+
+---
+
+### 🖥️ Real-Time Observability Control Board
+
+Our custom glassmorphic telemetry board lets you monitor the gateway operations visually:
+- **Network Topology Graph**: Live SVG connections showing request particles flowing from clients through the balancer to active backend replicas.
+- **Dynamic Token Buckets**: Real-time progress bars monitoring active capacities of the rate-limiting buckets (`user_free_11` with 5 burst capacity, `user_premium_99` with 50 burst capacity).
+- **Load Balancing Meter**: Real-time chart displaying the ratio of request distribution between products nodes.
+- **Log Feed Terminal**: Live streaming logs parsing raw stdout outputs from the gateway.
+
+---
+
+### 🛠️ Manual Verification (Optional)
+
+If you prefer to run or verify components manually:
+
+1. **Start the infrastructure**:
    ```bash
-   docker-compose up --build -d
+   ./.bin/docker-compose up --build -d
    ```
-   This builds the unified binary and spins up the Gateway, Redis, and the 3 mock services.
 
-2. **Generate Signed Tokens**:
-   Create mock JWT tokens locally (requires Go installed on host):
+2. **Generate tokens**:
    ```bash
    go run generatetoken.go
    ```
-   *Copy the outputted Premium Bearer token.*
 
-3. **Verify Routing & Dynamic Load Balancing**:
-   Send multiple requests to the products endpoint:
+3. **Query routes through the gateway**:
    ```bash
    TOKEN="<PASTE_PREMIUM_TOKEN>"
-   for i in {1..4}; do
-     curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/products | grep service_name
-   done
-   ```
-   *You will see the gateway route request 1 and 3 to `products-service-instance-1` and requests 2 and 4 to `products-service-instance-2`.*
-
-4. **Verify Observability (Metrics & Traces)**:
-   Check client response headers for trace propagation:
-   ```bash
    curl -i -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/products
    ```
-   *Verify the presence of `X-Trace-Id`.*
 
-   Query the Prometheus endpoint:
+4. **Query Prometheus metrics**:
    ```bash
    curl -s http://localhost:8080/metrics | grep gateway_
    ```
 
-5. **Verify Zero-Downtime Hot-Reloading**:
-   Edit `gateway.yaml` on your host machine to change `premium` capacity limit rules (e.g. from 20 to 100). The gateway will reload instantly:
+5. **Stop and Clean Up**:
    ```bash
-   docker logs api-gateway
+   ./.bin/docker-compose down
    ```
-   *Check for the logs: `[HOT-RELOAD SUCCESS] Route maps and rate-limit tiers reloaded cleanly.`*
-
-6. **Verify Fault Tolerance (Failover)**:
-   Stop one of the product instances:
-   ```bash
-   docker stop mock-products-1
-   ```
-   Send requests to `/api/v1/products`. The gateway immediately bypasses the stopped container, routing 100% of traffic to the healthy `mock-products-2` instance without failing client requests.
 
 ---
 
