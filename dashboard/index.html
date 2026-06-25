@@ -1,0 +1,1283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="API Gateway Live Telemetry Dashboard for tracking load balancing, rate limiting, and backend health.">
+    <title>API Gateway Telemetry Dashboard</title>
+    <!-- Google Fonts Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-color: #0b0b0f;
+            --panel-bg: rgba(20, 20, 28, 0.6);
+            --border-color: rgba(255, 255, 255, 0.06);
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --accent-primary: #6366f1; /* Indigo */
+            --accent-success: #10b981; /* Emerald */
+            --accent-warning: #f59e0b; /* Amber */
+            --accent-danger: #ef4444;  /* Red */
+            --accent-free: #3b82f6;    /* Blue */
+            --accent-premium: #d946ef; /* Magenta */
+            --glass-shine: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 100%);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.05) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(217, 70, 239, 0.05) 0%, transparent 45%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        /* Header Styling */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.5rem 2rem;
+            border-bottom: 1px solid var(--border-color);
+            backdrop-filter: blur(12px);
+            background: rgba(11, 11, 15, 0.8);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo-section {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .logo-section h1 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            letter-spacing: -0.025em;
+            background: linear-gradient(to right, #a5b4fc, #f472b6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .badge-live {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--accent-success);
+            padding: 0.25rem 0.6rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .pulse-dot {
+            width: 6px;
+            height: 6px;
+            background-color: var(--accent-success);
+            border-radius: 50%;
+            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+            }
+            70% {
+                transform: scale(1);
+                box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+            }
+            100% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+            }
+        }
+
+        .stats-summary {
+            display: flex;
+            gap: 2rem;
+        }
+
+        .header-stat {
+            text-align: right;
+        }
+
+        .header-stat-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .header-stat-val {
+            font-size: 1.125rem;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Main Layout Grid */
+        main {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            grid-template-rows: auto 1fr;
+            gap: 1.5rem;
+            padding: 2rem;
+            flex-grow: 1;
+            max-width: 1600px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        /* Glassmorphic Panel Styles */
+        .panel {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem;
+            backdrop-filter: blur(16px);
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .panel::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: var(--glass-shine);
+            pointer-events: none;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.25rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            padding-bottom: 0.75rem;
+        }
+
+        .panel-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* Left Side: Topology Map & Details */
+        .left-column {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        /* Topology Visualizer */
+        .topology-panel {
+            height: 380px;
+            position: relative;
+        }
+
+        .topology-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+
+        /* SVG Connections Background */
+        .topology-svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .conn-line {
+            fill: none;
+            stroke: rgba(255, 255, 255, 0.05);
+            stroke-width: 2;
+            stroke-dasharray: 4 4;
+        }
+
+        .conn-line-active {
+            stroke: var(--accent-primary);
+            stroke-opacity: 0.3;
+            stroke-width: 2;
+        }
+
+        /* Topology Nodes */
+        .node {
+            position: absolute;
+            background: rgba(17, 17, 24, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            padding: 0.75rem 1rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 2;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+            transform: translate(-50%, -50%);
+            transition: all 0.3s ease;
+        }
+
+        .node:hover {
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 15px rgba(99, 102, 241, 0.2);
+        }
+
+        .node-icon {
+            font-size: 1.5rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .node-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .node-sublabel {
+            font-size: 0.65rem;
+            color: var(--text-secondary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Node Position mappings */
+        #node-client { top: 50%; left: 8%; }
+        #node-gateway { top: 50%; left: 30%; }
+        #node-balancer { top: 50%; left: 55%; }
+        #node-products-1 { top: 22%; left: 82%; }
+        #node-products-2 { top: 50%; left: 82%; }
+        #node-checkout-1 { top: 78%; left: 82%; }
+
+        /* Animated request particles flowing on SVG lines */
+        .particle {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 3;
+            box-shadow: 0 0 8px currentColor;
+        }
+
+        .particle-success {
+            background-color: var(--accent-success);
+            color: var(--accent-success);
+        }
+
+        .particle-blocked {
+            background-color: var(--accent-danger);
+            color: var(--accent-danger);
+        }
+
+        /* Grid of Service Cards & Token buckets below topology */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1.2fr 1fr;
+            gap: 1.5rem;
+        }
+
+        /* Backend Server Status Cards */
+        .server-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 0.75rem;
+        }
+
+        .server-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 0.85rem 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: all 0.2s ease;
+        }
+
+        .server-card:hover {
+            background: rgba(255, 255, 255, 0.04);
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .server-info {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .server-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--text-secondary);
+        }
+
+        .server-indicator.online {
+            background-color: var(--accent-success);
+            box-shadow: 0 0 8px var(--accent-success);
+            animation: onlinePulse 2s infinite;
+        }
+
+        .server-indicator.offline {
+            background-color: var(--accent-danger);
+            box-shadow: 0 0 8px var(--accent-danger);
+        }
+
+        @keyframes onlinePulse {
+            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+            70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+
+        .server-details h4 {
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .server-details p {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .server-stats {
+            display: flex;
+            align-items: center;
+            gap: 1.25rem;
+            text-align: right;
+        }
+
+        .server-badge {
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 0.15rem 0.5rem;
+            border-radius: 4px;
+            background: rgba(255,255,255,0.05);
+            color: var(--text-secondary);
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .server-badge.closed {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--accent-success);
+            border-color: rgba(16, 185, 129, 0.2);
+        }
+
+        .server-badge.open {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--accent-danger);
+            border-color: rgba(239, 68, 68, 0.2);
+        }
+
+        .server-badge.half-open {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--accent-warning);
+            border-color: rgba(245, 158, 11, 0.2);
+        }
+
+        .server-requests {
+            font-size: 0.8rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 500;
+        }
+
+        .server-requests-label {
+            font-size: 0.6rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+        }
+
+        /* Token Bucket Monitors */
+        .token-limits-container {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .bucket-monitor {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1rem;
+        }
+
+        .bucket-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .bucket-name {
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .bucket-name.free { color: var(--accent-free); }
+        .bucket-name.premium { color: var(--accent-premium); }
+
+        .bucket-tokens-count {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .bucket-track {
+            height: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 9999px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .bucket-fill {
+            height: 100%;
+            border-radius: 9999px;
+            width: 100%;
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s;
+        }
+
+        .bucket-fill.free {
+            background: linear-gradient(to right, #3b82f6, #60a5fa);
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+        }
+
+        .bucket-fill.premium {
+            background: linear-gradient(to right, #d946ef, #f472b6);
+            box-shadow: 0 0 10px rgba(217, 70, 239, 0.5);
+        }
+
+        .bucket-fill.low {
+            background: linear-gradient(to right, #ef4444, #f87171) !important;
+            box-shadow: 0 0 10px rgba(239, 68, 68, 0.5) !important;
+        }
+
+        .bucket-info-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.65rem;
+            color: var(--text-secondary);
+            margin-top: 0.35rem;
+        }
+
+        /* Right Column: Live Scrolling Log & Controls */
+        .right-column {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        /* Realtime Traffic Logs Terminal */
+        .logs-panel {
+            display: flex;
+            flex-direction: column;
+            height: 520px;
+        }
+
+        .logs-console {
+            background: rgba(5, 5, 8, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 8px;
+            padding: 0.75rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            overflow-y: auto;
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            scroll-behavior: smooth;
+        }
+
+        .log-entry {
+            border-left: 2px solid var(--border-color);
+            padding-left: 0.5rem;
+            line-height: 1.4;
+            animation: fadeIn 0.2s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .log-time {
+            color: var(--text-secondary);
+            font-size: 0.65rem;
+            margin-right: 0.5rem;
+        }
+
+        .log-badge {
+            font-size: 0.65rem;
+            font-weight: 600;
+            padding: 0.1rem 0.35rem;
+            border-radius: 3px;
+            margin-right: 0.4rem;
+            display: inline-block;
+        }
+
+        .log-badge.pass {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent-success);
+        }
+
+        .log-badge.block {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--accent-danger);
+        }
+
+        .log-badge.sys {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--accent-warning);
+        }
+
+        /* Load Balancing Balance-Meter widget */
+        .balancer-panel {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .meter-container {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .meter-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .meter-bar {
+            height: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 9999px;
+            display: flex;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.03);
+        }
+
+        .meter-fill-p1 {
+            height: 100%;
+            background: linear-gradient(to right, #6366f1, #4f46e5);
+            width: 50%;
+            transition: width 0.4s ease;
+        }
+
+        .meter-fill-p2 {
+            height: 100%;
+            background: linear-gradient(to left, #a855f7, #9333ea);
+            width: 50%;
+            transition: width 0.4s ease;
+        }
+
+        .meter-legend {
+            display: flex;
+            justify-content: space-between;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            margin-top: 0.25rem;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
+        .legend-dot-p1 {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background-color: #6366f1;
+        }
+
+        .legend-dot-p2 {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background-color: #a855f7;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header Navigation -->
+    <header>
+        <div class="logo-section">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2L2 7L12 12L22 7L12 2Z" fill="#6366F1"/>
+                <path d="M2 17L12 22L22 17" stroke="#6366F1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M2 12L12 17L22 12" stroke="#818CF8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </</svg>
+            <h1>API GATEWAY CONTROL BOARD</h1>
+            <div class="badge-live" id="live-indicator">
+                <div class="pulse-dot"></div>
+                LIVE TELEMETRY
+            </div>
+        </div>
+
+        <div class="stats-summary">
+            <div class="header-stat">
+                <div class="header-stat-label">Total Requests</div>
+                <div class="header-stat-val" id="stat-total">0</div>
+            </div>
+            <div class="header-stat">
+                <div class="header-stat-label">Blocked (429)</div>
+                <div class="header-stat-val" id="stat-blocked" style="color: var(--accent-danger);">0</div>
+            </div>
+            <div class="header-stat">
+                <div class="header-stat-label">Success Rate</div>
+                <div class="header-stat-val" id="stat-success-rate" style="color: var(--accent-success);">100%</div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main>
+        
+        <!-- Left Side: Topology & Details -->
+        <div class="left-column">
+            
+            <!-- Topology Visualizer -->
+            <div class="panel topology-panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                        Gateway Network Topology
+                    </div>
+                </div>
+
+                <div class="topology-container" id="topology-container">
+                    <!-- SVG Background Lines -->
+                    <svg class="topology-svg" id="topology-svg">
+                        <!-- Client to Gateway -->
+                        <path id="path-client-gateway" class="conn-line" d="" />
+                        <!-- Gateway to Balancer -->
+                        <path id="path-gateway-balancer" class="conn-line" d="" />
+                        <!-- Balancer to Backends -->
+                        <path id="path-balancer-products-1" class="conn-line" d="" />
+                        <path id="path-balancer-products-2" class="conn-line" d="" />
+                        <path id="path-balancer-checkout-1" class="conn-line" d="" />
+                    </svg>
+
+                    <!-- Interactive Nodes -->
+                    <div class="node" id="node-client">
+                        <div class="node-icon">💻</div>
+                        <div class="node-label">Client Group</div>
+                        <div class="node-sublabel">Load Simulator</div>
+                    </div>
+
+                    <div class="node" id="node-gateway">
+                        <div class="node-icon">🛡️</div>
+                        <div class="node-label">API Gateway</div>
+                        <div class="node-sublabel">Port 8080</div>
+                    </div>
+
+                    <div class="node" id="node-balancer">
+                        <div class="node-icon">🔀</div>
+                        <div class="node-label">Load Balancer</div>
+                        <div class="node-sublabel">Round Robin</div>
+                    </div>
+
+                    <div class="node" id="node-products-1">
+                        <div class="node-icon">📦</div>
+                        <div class="node-label">Products-1</div>
+                        <div class="node-sublabel">Port 8081</div>
+                    </div>
+
+                    <div class="node" id="node-products-2">
+                        <div class="node-icon">📦</div>
+                        <div class="node-label">Products-2</div>
+                        <div class="node-sublabel">Port 8083</div>
+                    </div>
+
+                    <div class="node" id="node-checkout-1">
+                        <div class="node-icon">💳</div>
+                        <div class="node-label">Checkout-1</div>
+                        <div class="node-sublabel">Port 8082</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Detail Grid -->
+            <div class="dashboard-grid">
+                
+                <!-- Backend Server Cards -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">
+                            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" /></svg>
+                            Backend Server Instances
+                        </div>
+                    </div>
+                    <div class="server-grid">
+                        
+                        <!-- service-products-1 -->
+                        <div class="server-card" id="card-products-1">
+                            <div class="server-info">
+                                <div class="server-indicator online" id="indicator-products-1"></div>
+                                <div class="server-details">
+                                    <h4>products-service-instance-1</h4>
+                                    <p>http://service-products-1:8081</p>
+                                </div>
+                            </div>
+                            <div class="server-stats">
+                                <div class="server-badge closed" id="cb-products-1">CB: CLOSED</div>
+                                <div class="server-requests">
+                                    <div id="req-products-1">0</div>
+                                    <div class="server-requests-label">Reqs</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- service-products-2 -->
+                        <div class="server-card" id="card-products-2">
+                            <div class="server-info">
+                                <div class="server-indicator online" id="indicator-products-2"></div>
+                                <div class="server-details">
+                                    <h4>products-service-instance-2</h4>
+                                    <p>http://service-products-2:8083</p>
+                                </div>
+                            </div>
+                            <div class="server-stats">
+                                <div class="server-badge closed" id="cb-products-2">CB: CLOSED</div>
+                                <div class="server-requests">
+                                    <div id="req-products-2">0</div>
+                                    <div class="server-requests-label">Reqs</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- service-checkout-1 -->
+                        <div class="server-card" id="card-checkout-1">
+                            <div class="server-info">
+                                <div class="server-indicator online" id="indicator-checkout-1"></div>
+                                <div class="server-details">
+                                    <h4>checkout-service-instance-1</h4>
+                                    <p>http://service-checkout-1:8082</p>
+                                </div>
+                            </div>
+                            <div class="server-stats">
+                                <div class="server-badge closed" id="cb-checkout-1">CB: CLOSED</div>
+                                <div class="server-requests">
+                                    <div id="req-checkout-1">0</div>
+                                    <div class="server-requests-label">Reqs</div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <!-- Token Bucket Rate Limiting Panel -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">
+                            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            Dynamic Token Buckets
+                        </div>
+                    </div>
+                    <div class="token-limits-container">
+                        
+                        <!-- Free User Bucket -->
+                        <div class="bucket-monitor">
+                            <div class="bucket-header">
+                                <div class="bucket-name free">
+                                    <span>🔵</span> Free Subscription (user_free_11)
+                                </div>
+                                <div class="bucket-tokens-count" id="free-token-val">5 / 5</div>
+                            </div>
+                            <div class="bucket-track">
+                                <div class="bucket-fill free" id="free-token-bar" style="width: 100%"></div>
+                            </div>
+                            <div class="bucket-info-row">
+                                <span>Refill: 1 token/sec</span>
+                                <span>Burst Cap: 5 tokens</span>
+                            </div>
+                        </div>
+
+                        <!-- Premium User Bucket -->
+                        <div class="bucket-monitor">
+                            <div class="bucket-header">
+                                <div class="bucket-name premium">
+                                    <span>🟣</span> Premium Subscription (user_premium_99)
+                                </div>
+                                <div class="bucket-tokens-count" id="premium-token-val">50 / 50</div>
+                            </div>
+                            <div class="bucket-track">
+                                <div class="bucket-fill premium" id="premium-token-bar" style="width: 100%"></div>
+                            </div>
+                            <div class="bucket-info-row">
+                                <span>Refill: 5 tokens/sec</span>
+                                <span>Burst Cap: 50 tokens</span>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Right Side: Logs & Load Balancer Ratio -->
+        <div class="right-column">
+            
+            <!-- Realtime Event Logger -->
+            <div class="panel logs-panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                        Live Gateway Activity Log
+                    </div>
+                </div>
+                <div class="logs-console" id="log-console">
+                    <div class="log-entry" style="border-left-color: var(--accent-primary);">
+                        <span class="log-time">System Startup</span>
+                        <span class="log-badge sys">SYS</span>
+                        <span>Waiting for gateway events...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Balancer metrics meter -->
+            <div class="panel balancer-panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                        Products Service Balance
+                    </div>
+                </div>
+                <p style="font-size: 0.75rem; color: var(--text-secondary);">Visualizing request distribution between products replicas.</p>
+                <div class="meter-container">
+                    <div class="meter-labels">
+                        <span id="label-pct-p1">50%</span>
+                        <span id="label-pct-p2">50%</span>
+                    </div>
+                    <div class="meter-bar">
+                        <div class="meter-fill-p1" id="meter-p1" style="width: 50%;"></div>
+                        <div class="meter-fill-p2" id="meter-p2" style="width: 50%;"></div>
+                    </div>
+                    <div class="meter-legend">
+                        <div class="legend-item">
+                            <div class="legend-dot-p1"></div>
+                            <span>Products-1 (<span id="count-legend-p1">0</span>)</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-dot-p2"></div>
+                            <span>Products-2 (<span id="count-legend-p2">0</span>)</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <script>
+        // Track Dashboard Metrics
+        const metrics = {
+            totalRequests: 0,
+            blockedRequests: 0,
+            products1Count: 0,
+            products2Count: 0,
+            checkoutCount: 0,
+            tokenFreeMax: 5,
+            tokenPremiumMax: 50
+        };
+
+        // Cache DOM elements
+        const dom = {
+            statTotal: document.getElementById('stat-total'),
+            statBlocked: document.getElementById('stat-blocked'),
+            statSuccessRate: document.getElementById('stat-success-rate'),
+            logConsole: document.getElementById('log-console'),
+            
+            // Server request counts
+            reqProducts1: document.getElementById('req-products-1'),
+            reqProducts2: document.getElementById('req-products-2'),
+            reqCheckout1: document.getElementById('req-checkout-1'),
+            
+            // Server indicator lights
+            indicatorProducts1: document.getElementById('indicator-products-1'),
+            indicatorProducts2: document.getElementById('indicator-products-2'),
+            indicatorCheckout1: document.getElementById('indicator-checkout-1'),
+            
+            // CB status badges
+            cbProducts1: document.getElementById('cb-products-1'),
+            cbProducts2: document.getElementById('cb-products-2'),
+            cbCheckout1: document.getElementById('cb-checkout-1'),
+            
+            // Tokens
+            freeTokenVal: document.getElementById('free-token-val'),
+            freeTokenBar: document.getElementById('free-token-bar'),
+            premiumTokenVal: document.getElementById('premium-token-val'),
+            premiumTokenBar: document.getElementById('premium-token-bar'),
+            
+            // Balancer meter
+            meterP1: document.getElementById('meter-p1'),
+            meterP2: document.getElementById('meter-p2'),
+            labelPctP1: document.getElementById('label-pct-p1'),
+            labelPctP2: document.getElementById('label-pct-p2'),
+            countLegendP1: document.getElementById('count-legend-p1'),
+            countLegendP2: document.getElementById('count-legend-p2'),
+            
+            // Live indicator
+            liveIndicator: document.getElementById('live-indicator'),
+            
+            // Paths
+            pathClientGateway: document.getElementById('path-client-gateway'),
+            pathGatewayBalancer: document.getElementById('path-gateway-balancer'),
+            pathBalancerProducts1: document.getElementById('path-balancer-products-1'),
+            pathBalancerProducts2: document.getElementById('path-balancer-products-2'),
+            pathBalancerCheckout1: document.getElementById('path-balancer-checkout-1'),
+            topologyContainer: document.getElementById('topology-container')
+        };
+
+        // Initialize node connector lines dynamically
+        function drawConnectionLines() {
+            const getCenter = (el) => {
+                const rect = el.getBoundingClientRect();
+                const containerRect = dom.topologyContainer.getBoundingClientRect();
+                return {
+                    x: rect.left - containerRect.left + rect.width / 2,
+                    y: rect.top - containerRect.top + rect.height / 2
+                };
+            };
+
+            const client = getCenter(document.getElementById('node-client'));
+            const gateway = getCenter(document.getElementById('node-gateway'));
+            const balancer = getCenter(document.getElementById('node-balancer'));
+            const p1 = getCenter(document.getElementById('node-products-1'));
+            const p2 = getCenter(document.getElementById('node-products-2'));
+            const c1 = getCenter(document.getElementById('node-checkout-1'));
+
+            // Set SVG paths
+            dom.pathClientGateway.setAttribute('d', `M ${client.x} ${client.y} L ${gateway.x} ${gateway.y}`);
+            dom.pathGatewayBalancer.setAttribute('d', `M ${gateway.x} ${gateway.y} L ${balancer.x} ${balancer.y}`);
+            
+            // Curved paths to backends
+            dom.pathBalancerProducts1.setAttribute('d', `M ${balancer.x} ${balancer.y} C ${(balancer.x + p1.x)/2} ${balancer.y}, ${(balancer.x + p1.x)/2} ${p1.y}, ${p1.x} ${p1.y}`);
+            dom.pathBalancerProducts2.setAttribute('d', `M ${balancer.x} ${balancer.y} L ${p2.x} ${p2.y}`);
+            dom.pathBalancerCheckout1.setAttribute('d', `M ${balancer.x} ${balancer.y} C ${(balancer.x + c1.x)/2} ${balancer.y}, ${(balancer.x + c1.x)/2} ${c1.y}, ${c1.x} ${c1.y}`);
+        }
+
+        // Run initially and on window resize
+        window.addEventListener('resize', drawConnectionLines);
+        setTimeout(drawConnectionLines, 200);
+
+        // Update statistics displays
+        function updateStats() {
+            dom.statTotal.textContent = metrics.totalRequests;
+            dom.statBlocked.textContent = metrics.blockedRequests;
+            
+            const successCount = metrics.totalRequests - metrics.blockedRequests;
+            const successRate = metrics.totalRequests === 0 ? 100 : Math.round((successCount / metrics.totalRequests) * 100);
+            dom.statSuccessRate.textContent = `${successRate}%`;
+            if (successRate < 75) {
+                dom.statSuccessRate.style.color = 'var(--accent-danger)';
+            } else if (successRate < 95) {
+                dom.statSuccessRate.style.color = 'var(--accent-warning)';
+            } else {
+                dom.statSuccessRate.style.color = 'var(--accent-success)';
+            }
+
+            // Server counts
+            dom.reqProducts1.textContent = metrics.products1Count;
+            dom.reqProducts2.textContent = metrics.products2Count;
+            dom.reqCheckout1.textContent = metrics.checkoutCount;
+
+            dom.countLegendP1.textContent = metrics.products1Count;
+            dom.countLegendP2.textContent = metrics.products2Count;
+
+            // Load balancer meter calculations
+            const totalProducts = metrics.products1Count + metrics.products2Count;
+            if (totalProducts > 0) {
+                const pct1 = Math.round((metrics.products1Count / totalProducts) * 100);
+                const pct2 = 100 - pct1;
+                dom.meterP1.style.width = `${pct1}%`;
+                dom.meterP2.style.width = `${pct2}%`;
+                dom.labelPctP1.textContent = `${pct1}%`;
+                dom.labelPctP2.textContent = `${pct2}%`;
+            }
+        }
+
+        // Append log to console helper
+        function logMessage(badgeClass, badgeText, message) {
+            const timeStr = new Date().toLocaleTimeString();
+            const logHTML = `
+                <div class="log-entry" style="border-left-color: ${badgeClass === 'pass' ? 'var(--accent-success)' : badgeClass === 'block' ? 'var(--accent-danger)' : 'var(--accent-warning)'}">
+                    <span class="log-time">${timeStr}</span>
+                    <span class="log-badge ${badgeClass}">${badgeText}</span>
+                    <span>${message}</span>
+                </div>
+            `;
+            dom.logConsole.insertAdjacentHTML('beforeend', logHTML);
+            dom.logConsole.scrollTop = dom.logConsole.scrollHeight;
+
+            // Keep log size reasonable
+            if (dom.logConsole.children.length > 50) {
+                dom.logConsole.removeChild(dom.logConsole.firstChild);
+            }
+        }
+
+        // Animate particles flowing through topology
+        function animateRequest(type, targetBackend) {
+            // Find target element path
+            let path;
+            if (type === 'blocked') {
+                path = dom.pathClientGateway;
+            } else {
+                // success or failed proxy path
+                if (targetBackend.includes('products-1')) {
+                    path = dom.pathBalancerProducts1;
+                } else if (targetBackend.includes('products-2')) {
+                    path = dom.pathBalancerProducts2;
+                } else if (targetBackend.includes('checkout-1')) {
+                    path = dom.pathBalancerCheckout1;
+                }
+            }
+
+            if (!path) return;
+
+            // Animate along first segment (Client -> Gateway)
+            createParticle(dom.pathClientGateway, type, 400, () => {
+                if (type === 'blocked') {
+                    // Blocked request ends at gateway. Flash red.
+                    flashNode(document.getElementById('node-gateway'), 'var(--accent-danger)');
+                    return;
+                }
+                
+                // Flow segment 2: Gateway -> Balancer
+                createParticle(dom.pathGatewayBalancer, type, 250, () => {
+                    // Flow segment 3: Balancer -> Backend
+                    createParticle(path, type, 350, () => {
+                        // Backend node hits. Flash.
+                        let backendNodeId;
+                        if (targetBackend.includes('products-1')) backendNodeId = 'node-products-1';
+                        else if (targetBackend.includes('products-2')) backendNodeId = 'node-products-2';
+                        else if (targetBackend.includes('checkout-1')) backendNodeId = 'node-checkout-1';
+                        
+                        if (backendNodeId) {
+                            flashNode(document.getElementById(backendNodeId), 'var(--accent-success)');
+                        }
+                    });
+                });
+            });
+        }
+
+        function createParticle(pathElement, type, duration, onComplete) {
+            const particle = document.createElement('div');
+            particle.className = `particle particle-${type}`;
+            dom.topologyContainer.appendChild(particle);
+
+            const pathData = pathElement.getAttribute('d');
+            
+            // Web Animations API along path
+            particle.style.offsetPath = `path('${pathData}')`;
+            
+            const animation = particle.animate([
+                { offsetDistance: '0%' },
+                { offsetDistance: '100%' }
+            ], {
+                duration: duration,
+                easing: 'linear'
+            });
+
+            animation.onfinish = () => {
+                particle.remove();
+                if (onComplete) onComplete();
+            };
+        }
+
+        function flashNode(element, color) {
+            element.style.borderColor = color;
+            element.style.boxShadow = `0 0 15px ${color}`;
+            setTimeout(() => {
+                element.style.borderColor = '';
+                element.style.boxShadow = '';
+            }, 300);
+        }
+
+        // SSE Real-Time Event Listener
+        function connectSSE() {
+            const source = new EventSource('/stream');
+
+            source.onopen = function() {
+                dom.liveIndicator.className = 'badge-live';
+                dom.liveIndicator.style.borderColor = 'rgba(16, 185, 129, 0.2)';
+                dom.liveIndicator.style.color = 'var(--accent-success)';
+                logMessage('sys', 'CONN', 'Established SSE telemetry stream connection.');
+            };
+
+            source.onerror = function(err) {
+                dom.liveIndicator.className = 'badge-live';
+                dom.liveIndicator.style.borderColor = 'rgba(239, 68, 68, 0.2)';
+                dom.liveIndicator.style.color = 'var(--accent-danger)';
+                logMessage('sys', 'WARN', 'Lost telemetry link. Retrying...');
+            };
+
+            source.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+
+                if (data.type === 'proxy_pass') {
+                    metrics.totalRequests++;
+                    
+                    // Increment backend specific counts
+                    let backendName = "Unknown";
+                    if (data.backend.includes('products-1') || data.backend.includes('8081')) {
+                        metrics.products1Count++;
+                        backendName = "Products-1";
+                    } else if (data.backend.includes('products-2') || data.backend.includes('8083')) {
+                        metrics.products2Count++;
+                        backendName = "Products-2";
+                    } else if (data.backend.includes('checkout-1') || data.backend.includes('8082')) {
+                        metrics.checkoutCount++;
+                        backendName = "Checkout-1";
+                    }
+
+                    // Update token capacity display
+                    updateTokenBucket(data.tier, data.quota);
+
+                    // Animate and Log
+                    animateRequest('success', data.backend);
+                    logMessage('pass', 'PASS', `User: <strong>${data.user}</strong> (${data.tier}) | Routing to: <strong>${backendName}</strong> | Quota remaining: ${data.quota}`);
+                    updateStats();
+                } 
+                
+                else if (data.type === 'blocked') {
+                    metrics.totalRequests++;
+                    metrics.blockedRequests++;
+                    
+                    // Update token capacity to 0 since blocked
+                    updateTokenBucket(data.tier, 0);
+
+                    // Animate and Log
+                    animateRequest('blocked', null);
+                    logMessage('block', '429', `BLOCKED: User <strong>${data.user}</strong> exhausted rate limit for route <strong>${data.path}</strong>.`);
+                    updateStats();
+                } 
+                
+                else if (data.type === 'health') {
+                    const isOnline = data.status === 'ONLINE';
+                    let targetIndicator, targetCard, name;
+                    
+                    if (data.backend.includes('products-1') || data.backend.includes('8081')) {
+                        targetIndicator = dom.indicatorProducts1;
+                        targetCard = document.getElementById('card-products-1');
+                        name = "Products-1";
+                    } else if (data.backend.includes('products-2') || data.backend.includes('8083')) {
+                        targetIndicator = dom.indicatorProducts2;
+                        targetCard = document.getElementById('card-products-2');
+                        name = "Products-2";
+                    } else if (data.backend.includes('checkout-1') || data.backend.includes('8082')) {
+                        targetIndicator = dom.indicatorCheckout1;
+                        targetCard = document.getElementById('card-checkout-1');
+                        name = "Checkout-1";
+                    }
+
+                    if (targetIndicator) {
+                        if (isOnline) {
+                            targetIndicator.className = 'server-indicator online';
+                            targetCard.style.opacity = '1';
+                        } else {
+                            targetIndicator.className = 'server-indicator offline';
+                            targetCard.style.opacity = '0.5';
+                        }
+                        logMessage('sys', isOnline ? 'OK' : 'FAIL', `Health Check: Service <strong>${name}</strong> is now ${isOnline ? 'ONLINE' : 'DEGRADED / OFFLINE'}.`);
+                    }
+                } 
+                
+                else if (data.type === 'circuit_breaker') {
+                    let badge, name;
+                    if (data.backend.includes('products-1') || data.backend.includes('8081')) {
+                        badge = dom.cbProducts1;
+                        name = "Products-1";
+                    } else if (data.backend.includes('products-2') || data.backend.includes('8083')) {
+                        badge = dom.cbProducts2;
+                        name = "Products-2";
+                    } else if (data.backend.includes('checkout-1') || data.backend.includes('8082')) {
+                        badge = dom.cbCheckout1;
+                        name = "Checkout-1";
+                    }
+
+                    if (badge) {
+                        badge.className = `server-badge ${data.to.toLowerCase()}`;
+                        badge.textContent = `CB: ${data.to.toUpperCase()}`;
+                        logMessage('sys', 'CB', `Circuit Breaker: Node <strong>${name}</strong> state transition: ${data.from} -> <strong>${data.to}</strong>`);
+                    }
+                }
+            };
+        }
+
+        // Helper to update token bars and labels
+        function updateTokenBucket(tier, tokensLeft) {
+            if (tier === 'free') {
+                dom.freeTokenVal.textContent = `${tokensLeft} / ${metrics.tokenFreeMax}`;
+                const pct = (tokensLeft / metrics.tokenFreeMax) * 100;
+                dom.freeTokenBar.style.width = `${pct}%`;
+                if (tokensLeft <= 1) {
+                    dom.freeTokenBar.classList.add('low');
+                } else {
+                    dom.freeTokenBar.classList.remove('low');
+                }
+            } else if (tier === 'premium') {
+                dom.premiumTokenVal.textContent = `${tokensLeft} / ${metrics.tokenPremiumMax}`;
+                const pct = (tokensLeft / metrics.tokenPremiumMax) * 100;
+                dom.premiumTokenBar.style.width = `${pct}%`;
+                if (tokensLeft <= 8) {
+                    dom.premiumTokenBar.classList.add('low');
+                } else {
+                    dom.premiumTokenBar.classList.remove('low');
+                }
+            }
+        }
+
+        // Connect SSE on Page Load
+        connectSSE();
+    </script>
+</body>
+</html>

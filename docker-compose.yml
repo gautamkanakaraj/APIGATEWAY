@@ -74,7 +74,23 @@ services:
     networks:
       - gateway-network
 
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    container_name: gateway-dashboard
+    ports:
+      - "3001:3000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    user: root
+    networks:
+      - gateway-network
+    depends_on:
+      - gateway
+
 networks:
   gateway-network:
     name: gateway-network
     driver: bridge
+
